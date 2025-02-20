@@ -1,0 +1,21 @@
+# refer https://docs.rs/log4rs/latest/log4rs/config/index.html#formatters for formatting
+refresh_rate: 30 seconds
+
+appenders:
+  # console output
+  stdout:
+    kind: console
+
+  # file output
+  fout:
+    kind: file
+    append: false
+    path: logs/debug.log
+    encoder:
+      pattern: "[{d(%Y-%m-%d %H:%M:%S)(utc)} {l} {t}] {m}{n}"
+
+root:
+  level: debug
+  appenders:
+    - stdout
+    - fout
