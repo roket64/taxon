@@ -1,13 +1,30 @@
 use log::debug;
 use reqwest::{Client, Request, Url};
-use serde::Serialize;
 
+use super::schema::ProfileKind;
 use super::schema::WorldStateKind;
 
 pub struct UrlBuilder {}
 
 impl UrlBuilder {
-    pub fn get_req_path<'a, 'b>(kind: &WorldStateKind) -> &'a [&'b str] {
+    pub fn get_profile_req_path(kind: &ProfileKind, username: &str) -> Vec<String> {
+        match kind {
+            // ../profile/{username}
+            ProfileKind::Profile => {
+                vec!["profile".to_string(), format!("{}", username.to_string())]
+            }
+            // ../profile/{username}/stats
+            ProfileKind::Stats => {
+                vec![
+                    "profile".to_string(),
+                    format!("{}", username.to_string()),
+                    "stats".to_string(),
+                ]
+            }
+        }
+    }
+
+    pub fn get_worldstate_req_path(kind: &WorldStateKind) -> Vec<String> {
         match kind {
             WorldStateKind::WorldState => decl_req_path!(),
             WorldStateKind::Alerts => decl_req_path!("alerts"),
@@ -42,30 +59,45 @@ impl UrlBuilder {
             WorldStateKind::VoidTraders => decl_req_path!("voidTraders"),
         }
     }
+
+    pub fn build_request_url_test(
+        base: &str,
+        // paths: &[&str],
+        paths: Vec<String>,
+        query: Option<&str>,
+    ) -> Result<Url, Box<dyn std::error::Error>> {
+        let mut url = Url::parse(base)?;
+        for path in paths {
+            url.path_segments_mut().unwrap().extend([path]);
+        }
+        url.set_query(query);
+        debug!("Url built: {:#?}", &url);
+        Ok(url)
+    }
+
+    //TODO: the type of arguments should be generalized
+    pub fn build_request_url(
+        base: &str,
+        paths: &[&str],
+        query: Option<&str>,
+    ) -> Result<Url, Box<dyn std::error::Error>> {
+        let mut url = Url::parse(base)?;
+        for path in paths {
+            url.path_segments_mut().unwrap().extend([path]);
+        }
+        url.set_query(query);
+        debug!("Url built: {:#?}", &url);
+        Ok(url)
+    }
 }
 
 #[derive(Debug)]
 pub struct RequestBuilder {}
 
 impl RequestBuilder {
-    //TODO: the type of arguments should be generalized
-    pub fn build_request_url(
-        base: &str,
-        paths: &[&str],
-    ) -> Result<Url, Box<dyn std::error::Error>> {
-        let mut url = Url::parse(base)?;
-        for path in paths {
-            url.path_segments_mut().unwrap().extend([path]);
-        }
-        debug!("Url built: {:#?}", &url);
-        Ok(url)
-    }
-
-    pub fn build_request<T>(client: &Client, url: Url, query: &T) -> Request
-    where
-        T: Serialize + ?Sized,
-    {
-        let request = client.get(url).query(query).build().unwrap();
+    // builds request using GET method
+    pub fn build_request(client: &Client, url: Url) -> Request {
+        let request = client.get(url).build().unwrap();
         debug!("Request built: {:#?}", &request);
         request
     }
