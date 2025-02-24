@@ -1,23 +1,5 @@
+use super::decl_schema_struct;
 use serde::{Deserialize, Serialize};
-
-macro_rules! decl_schema_struct {
-    ($strt_name: ident,
-        $($([$rename: literal])*
-        $key: ident=$val: ty),*) => {
-        #[derive(Debug, Serialize, Deserialize)]
-        pub struct $strt_name {
-            $(
-                $(#[serde(rename = $rename)])*
-                // wrapping it in Option<> to prevent mapping errors
-                $key: Option<$val>
-            ),*
-        }
-    };
-
-    ($strt_name: ident) => {
-        decl_schema_struct!($strt_name,);
-    };
-}
 
 //TODO: implement this
 decl_schema_struct!(WorldState);
