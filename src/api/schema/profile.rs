@@ -1,5 +1,6 @@
 use super::decl_schema_struct;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
 decl_schema_struct!(Profile,
   ["accountId"]
@@ -246,7 +247,7 @@ pub enum ProfileSchema {
     Stats(Stats),
 }
 
-#[derive(Debug)]
+#[derive(Debug, EnumIter)]
 pub enum ProfileKind {
     Profile,
     Stats,
