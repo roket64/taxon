@@ -1,8 +1,10 @@
 use log::debug;
-use reqwest::{Client, Request, Url};
+use reqwest::Url;
 
 use super::schema::ProfileKind;
 use super::schema::WorldStateKind;
+
+const API_URL: &str = "https://api.warframestat.us";
 
 pub struct UrlBuilder {}
 
@@ -26,13 +28,13 @@ impl UrlBuilder {
 
     pub fn get_worldstate_req_path(kind: &WorldStateKind) -> Vec<String> {
         match kind {
-            WorldStateKind::WorldState => decl_req_path!(),
+            // WorldStateKind::WorldState => decl_req_path!(),
             WorldStateKind::Alerts => decl_req_path!("alerts"),
             WorldStateKind::Arbitration => decl_req_path!("arbitration"),
             WorldStateKind::ArchonHunt => decl_req_path!("archonHunt"),
             WorldStateKind::CambionDrift => decl_req_path!("cambionCycle"),
-            WorldStateKind::CetusState => decl_req_path!("cetusCycle"),
-            WorldStateKind::ConclaveChallenge => decl_req_path!("conclaveChallenge"),
+            WorldStateKind::CetusStatus => decl_req_path!("cetusCycle"),
+            WorldStateKind::ConclaveChallenge => decl_req_path!("conclaveChallenges"),
             WorldStateKind::ConstructionProgress => decl_req_path!("constructionProgress"),
             WorldStateKind::DailyDeal => decl_req_path!("dailyDeals"),
             WorldStateKind::DeepArchimedea => decl_req_path!("deepArchimedea"),
@@ -60,45 +62,17 @@ impl UrlBuilder {
         }
     }
 
-    pub fn build_request_url_test(
-        base: &str,
-        // paths: &[&str],
+    //TODO: the type of arguments should be generalized
+    pub fn build_request_url(
         paths: Vec<String>,
         query: Option<&str>,
     ) -> Result<Url, Box<dyn std::error::Error>> {
-        let mut url = Url::parse(base)?;
+        let mut url = Url::parse(API_URL)?;
         for path in paths {
             url.path_segments_mut().unwrap().extend([path]);
         }
         url.set_query(query);
         debug!("Url built: {:#?}", &url);
         Ok(url)
-    }
-
-    //TODO: the type of arguments should be generalized
-    pub fn build_request_url(
-        base: &str,
-        paths: &[&str],
-        query: Option<&str>,
-    ) -> Result<Url, Box<dyn std::error::Error>> {
-        let mut url = Url::parse(base)?;
-        for path in paths {
-            url.path_segments_mut().unwrap().extend([path]);
-        }
-        url.set_query(query);
-        debug!("Url built: {:#?}", &url);
-        Ok(url)
-    }
-}
-
-#[derive(Debug)]
-pub struct RequestBuilder {}
-
-impl RequestBuilder {
-    // builds request using GET method
-    pub fn build_request(client: &Client, url: Url) -> Request {
-        let request = client.get(url).build().unwrap();
-        debug!("Request built: {:#?}", &request);
-        request
     }
 }
