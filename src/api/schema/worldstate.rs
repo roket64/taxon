@@ -1,5 +1,6 @@
 use super::decl_schema_struct;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
 //TODO: implement this
 decl_schema_struct!(WorldState);
@@ -557,12 +558,12 @@ decl_schema_struct!(VoidTraders,
 
 #[derive(Debug)]
 pub enum WorldStateSchema {
-    WorldState(WorldState),
+    // WorldState(WorldState),
     Alerts(Vec<Alerts>),
     Arbitration(Arbitration),
     ArchonHunt(ArchonHunt),
     CambionDrift(CambionDrift),
-    CetusState(CetusStatus),
+    CetusStatus(CetusStatus),
     ConclaveChallenge(Vec<ConclaveChallenge>),
     ConstructionProgress(ConstructionProgress),
     DailyDeal(Vec<DailyDeal>),
@@ -590,14 +591,14 @@ pub enum WorldStateSchema {
     VoidTraders(Vec<VoidTraders>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, EnumIter)]
 pub enum WorldStateKind {
-    WorldState,
+    // WorldState,
     Alerts,
     Arbitration,
     ArchonHunt,
     CambionDrift,
-    CetusState,
+    CetusStatus,
     ConclaveChallenge,
     ConstructionProgress,
     DailyDeal,
