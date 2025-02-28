@@ -1,273 +1,151 @@
 use bytes::Bytes;
-use log::error;
-use request::{RequestBuilder, UrlBuilder};
-use reqwest::{Client, Response};
+use log::debug;
+use request::UrlBuilder;
+use reqwest::Response;
 use response::ResponseHandler;
 use schema::*;
 
 macro_rules! decl_req_path {
     () => {
-        // &["pc"]
         vec!["pc".to_string()]
     };
 
     ($($path:literal),+) => {
-        // &["pc", $($path),+]
         vec!["pc".to_string(), $($path.to_string()),+]
     };
 }
 
-macro_rules! decl_req_query {
-    ($($key:literal=$val:literal),*) => {
-        &[$(($key, $val),)*]
-    };
-}
-
-macro_rules! decl_fetch_profile_func {
-    ($func_name: ident, $wrapper: path, $ret: ident) => {
-        fn $func_name(&self, chunk: &Bytes) -> ProfileSchema {
-            let res: $ret = serde_json::from_slice(&chunk).unwrap();
+macro_rules! decl_fetch_fn {
+    ($(
+        $(#[deprecated = $deprecated: literal])?
+        {$wrapper: path, $parse: ty} => fn $fn_name: ident(chunk: &Bytes) -> $ret: ty;
+    )*) => {
+        $(
+            $(#[deprecated = $deprecated])?
+            pub fn $fn_name(chunk: &Bytes) -> $ret {
+            let res: $parse = serde_json::from_slice(&chunk).unwrap();
             $wrapper(res)
-        }
-    };
-}
-
-// idk this is the best way to implement such thing
-macro_rules! decl_fetch_worldstate_func {
-    ($func_name: ident, $wrapper: path, $ret: ty) => {
-        fn $func_name(&self, chunk: &Bytes) -> WorldStateSchema {
-            let res: $ret = serde_json::from_slice(&chunk).unwrap();
-            $wrapper(res)
-        }
+        })*
     };
 }
 
 #[derive(Debug)]
-pub struct ApiHandler {
-    api_url: String,
-}
+pub struct ApiHandler;
 
 impl ApiHandler {
-    pub fn new() -> Self {
-        let api_url = std::env::var("WARFRAME_OPENAPI_URL");
-        if api_url.is_err() {
-            error!("failed to fetch `WARFRAME_OPENAPI_URL` from enviroment variables");
-        }
-        ApiHandler {
-            api_url: api_url.unwrap(),
-        }
+    pub async fn fetch_contents(paths: Vec<String>, query: Option<&str>) -> Response {
+        let url = UrlBuilder::build_request_url(paths, query).unwrap();
+        reqwest::get(url).await.unwrap()
     }
 
-    pub async fn fetch_profile(&self, kind: &ProfileKind, username: &str) -> ProfileSchema {
-        let client = Client::new();
-        let base = self.api_url.as_str();
-        let paths = UrlBuilder::get_profile_req_path(kind, username);
-        let query = Some("language=en");
-
-        //TODO: this should try to connect to the server until the connection is established
-        let mut response = self.connect_to_api_server(&client, base, paths, query).await.unwrap();
-
-        // you may use just `response.bytes()`
-        let chunk = ResponseHandler::get_response_chunk(&mut response)
-            .await
-            .unwrap();
-
-        match kind {
-            ProfileKind::Profile => self.fetch_profile_schema(&chunk),
-            ProfileKind::Stats => self.fetch_stats_schema(&chunk),
-        }
-    }
-
-    pub async fn fetch_worldstate(&self, kind: &WorldStateKind) -> WorldStateSchema {
-        let client = Client::new();
-        let base = self.api_url.as_str();
-        //TODO: maybe i should use a predefined HashMap<> or something
-        let paths = UrlBuilder::get_worldstate_req_path(&kind);
-        let query = Some("language=en");
-
-        //TODO: this should try to connect to the server until the connection is established
-        let mut response = self.connect_to_api_server(&client, base, paths, query).await.unwrap();
-
-        // you may use just `response.bytes()`
-        let chunk = ResponseHandler::get_response_chunk(&mut response)
-            .await
-            .unwrap();
-
-        let contents = match kind {
-            WorldStateKind::WorldState => todo!(),
-            WorldStateKind::Alerts => self.fetch_alerts(&chunk),
-            WorldStateKind::Arbitration => self.fetch_arbitration(&chunk),
-            WorldStateKind::ArchonHunt => self.fetch_archon_hunt(&chunk),
-            WorldStateKind::CambionDrift => self.fetch_cambion_drift(&chunk),
-            WorldStateKind::CetusState => self.fetch_cetus_state(&chunk),
-            WorldStateKind::ConclaveChallenge => self.fetch_conclave_challenges(&chunk),
-            WorldStateKind::ConstructionProgress => self.fetch_construction_porgress(&chunk),
-            WorldStateKind::DailyDeal => self.fetch_daily_deals(&chunk),
-            WorldStateKind::DeepArchimedea => self.fetch_deep_archimedea(&chunk),
-            WorldStateKind::EarthRotation => self.fetch_earth_rotation(&chunk),
-            WorldStateKind::Events => self.fetch_events(&chunk),
-            WorldStateKind::Fissures => self.fetch_fissures(&chunk),
-            WorldStateKind::FlashSales => self.fetch_flash_sales(&chunk),
-            WorldStateKind::GlobalUpgrades => self.fetch_global_upgrades(&chunk),
-            WorldStateKind::Invasion => self.fetch_invasions(&chunk),
-            WorldStateKind::Kuva => self.fetch_kuva(&chunk),
-            WorldStateKind::NewsItems => self.fetch_news_items(&chunk),
-            WorldStateKind::Nightwave => self.fetch_nightwave(&chunk),
-            WorldStateKind::PersistentEnemy => self.fetch_persistent_enemy(&chunk),
-            WorldStateKind::Riven => self.fetch_riven(&chunk),
-            WorldStateKind::SentientOutpost => self.fetch_sentient_outpost(&chunk),
-            WorldStateKind::SanctuaryStatus => self.fetch_sanctuary_status(&chunk),
-            WorldStateKind::Sortie => self.fetch_sortie(&chunk),
-            WorldStateKind::SteelPath => self.fetch_steel_path(&chunk),
-            WorldStateKind::SyndicateMissionNodes => self.fetch_syndicate_mission_nodes(&chunk),
-            WorldStateKind::Timestamp => self.fetch_timestamp(&chunk),
-            WorldStateKind::OrbVallis => self.fetch_orb_vallis(&chunk),
-            WorldStateKind::Varzia => self.fetch_varzia(&chunk),
-            WorldStateKind::VoidTrader => self.fetch_void_trader(&chunk),
-            WorldStateKind::VoidTraders => self.fetch_void_traders(&chunk),
-        };
-        contents
-    }
-
-    async fn connect_to_api_server(
-        &self,
-        client: &Client,
-        base: &str,
-        // paths: &[&str],
-        paths: Vec<String>,
+    pub async fn fetch_profile_contents(
+        kind: &ProfileKind,
         query: Option<&str>,
-    ) -> Result<Response, reqwest::Error> {
-        let url = UrlBuilder::build_request_url_test(base, paths, query).unwrap();
-        let req = RequestBuilder::build_request(client, url);
-        client.execute(req).await
+        username: &str,
+    ) -> ProfileSchema {
+        let paths = UrlBuilder::get_profile_req_path(kind, username);
+        let mut response = ApiHandler::fetch_contents(paths, query).await;
+        debug!("`Response` received: {:#?}", response);
+
+        // you may use just `response.bytes()`
+        let chunk = ResponseHandler::get_response_chunk(&mut response)
+            .await
+            .unwrap();
+        debug!("`Bytes` parsed: {:#?}", &chunk);
+
+        let schema = match kind {
+            ProfileKind::Profile => ApiHandler::fetch_profile(&chunk),
+            ProfileKind::Stats => ApiHandler::fetch_stats(&chunk),
+        };
+        schema
     }
 
-    /********************************** WorldStateKind **********************************/
-    decl_fetch_worldstate_func!(fetch_alerts, WorldStateSchema::Alerts, Vec<Alerts>);
+    pub async fn fetch_worldstate_contents(
+        kind: &WorldStateKind,
+        query: Option<&str>,
+    ) -> WorldStateSchema {
+        let paths = UrlBuilder::get_worldstate_req_path(kind);
+        let mut response = ApiHandler::fetch_contents(paths, query).await;
+        debug!("response received: {:#?}", &response);
 
-    decl_fetch_worldstate_func!(
-        fetch_arbitration,
-        WorldStateSchema::Arbitration,
-        Arbitration
+        // you may use just `response.bytes()`
+        let chunk = ResponseHandler::get_response_chunk(&mut response)
+            .await
+            .unwrap();
+        debug!("bytes parsed: {:#?}", &chunk);
+
+        let schema = match kind {
+            // WorldStateKind::WorldState => todo!(),
+            WorldStateKind::Alerts => ApiHandler::fetch_alerts(&chunk),
+            WorldStateKind::Arbitration => ApiHandler::fetch_arbitration(&chunk),
+            WorldStateKind::ArchonHunt => ApiHandler::fetch_archon_hunt(&chunk),
+            WorldStateKind::CambionDrift => ApiHandler::fetch_cambion_drift(&chunk),
+            WorldStateKind::CetusStatus => ApiHandler::fetch_cetus_status(&chunk),
+            WorldStateKind::ConclaveChallenge => ApiHandler::fetch_conclave_challenges(&chunk),
+            WorldStateKind::ConstructionProgress => ApiHandler::fetch_construction_progress(&chunk),
+            WorldStateKind::DailyDeal => ApiHandler::fetch_daily_deals(&chunk),
+            WorldStateKind::DeepArchimedea => ApiHandler::fetch_deep_archimedea(&chunk),
+            WorldStateKind::EarthRotation => ApiHandler::fetch_earth_rotation(&chunk),
+            WorldStateKind::Events => ApiHandler::fetch_events(&chunk),
+            WorldStateKind::Fissures => ApiHandler::fetch_fissures(&chunk),
+            WorldStateKind::FlashSales => ApiHandler::fetch_flash_sales(&chunk),
+            WorldStateKind::GlobalUpgrades => ApiHandler::fetch_global_upgrades(&chunk),
+            WorldStateKind::Invasion => ApiHandler::fetch_invasions(&chunk),
+            WorldStateKind::Kuva => ApiHandler::fetch_kuva(&chunk),
+            WorldStateKind::NewsItems => ApiHandler::fetch_news_items(&chunk),
+            WorldStateKind::Nightwave => ApiHandler::fetch_nightwave(&chunk),
+            WorldStateKind::PersistentEnemy => ApiHandler::fetch_persistent_enemy(&chunk),
+            WorldStateKind::Riven => ApiHandler::fetch_riven(&chunk),
+            WorldStateKind::SentientOutpost => ApiHandler::fetch_sentient_outpost(&chunk),
+            WorldStateKind::SanctuaryStatus => ApiHandler::fetch_sanctuary_status(&chunk),
+            WorldStateKind::Sortie => ApiHandler::fetch_sortie(&chunk),
+            WorldStateKind::SteelPath => ApiHandler::fetch_steel_path(&chunk),
+            WorldStateKind::SyndicateMissionNodes => {
+                ApiHandler::fetch_syndicate_mission_nodes(&chunk)
+            }
+            WorldStateKind::Timestamp => ApiHandler::fetch_timestamp(&chunk),
+            WorldStateKind::OrbVallis => ApiHandler::fetch_orb_vallis(&chunk),
+            WorldStateKind::Varzia => ApiHandler::fetch_varzia(&chunk),
+            WorldStateKind::VoidTrader => ApiHandler::fetch_void_trader(&chunk),
+            WorldStateKind::VoidTraders => ApiHandler::fetch_void_traders(&chunk),
+        };
+        schema
+    }
+
+    decl_fetch_fn!(
+        { WorldStateSchema::Alerts, Vec<Alerts> } => fn fetch_alerts(chunk: &Bytes) -> WorldStateSchema;
+        { WorldStateSchema::Arbitration, Arbitration } => fn fetch_arbitration(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::ArchonHunt, ArchonHunt} => fn fetch_archon_hunt(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::CambionDrift, CambionDrift } => fn fetch_cambion_drift(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::CetusStatus, CetusStatus } => fn fetch_cetus_status(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::ConclaveChallenge, Vec<ConclaveChallenge> } => fn fetch_conclave_challenges(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::ConstructionProgress, ConstructionProgress } => fn fetch_construction_progress(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::DailyDeal, Vec<DailyDeal> } => fn fetch_daily_deals(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::DeepArchimedea, DeepArchimedea } => fn fetch_deep_archimedea(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::EarthRotation, EarthRotation } => fn fetch_earth_rotation(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Events, Events } => fn fetch_events(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Fissures, Vec<Fissures> } => fn fetch_fissures(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::FlashSales, Vec<FlashSales> } => fn fetch_flash_sales(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::GlobalUpgrades, Vec<GlobalUpgrades> } => fn fetch_global_upgrades(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Invasion, Vec<Invasion> } => fn fetch_invasions(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Kuva, Vec<Kuva> } => fn fetch_kuva(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::NewsItems, Vec<NewsItems> } => fn fetch_news_items(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Nightwave, Nightwave } => fn fetch_nightwave(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::PersistentEnemy, Vec<PersistentEnemy> } => fn fetch_persistent_enemy(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Riven, Riven } => fn fetch_riven(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::SentientOutpost, SentientOutpost } => fn fetch_sentient_outpost(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::SanctuaryStatus, SanctuaryStatus } => fn fetch_sanctuary_status(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Sortie, Sortie } => fn fetch_sortie(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::SteelPath, SteelPath } => fn fetch_steel_path(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::SyndicateMissionNodes, SyndicateMissionNodes } => fn fetch_syndicate_mission_nodes(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Timestamp, Timestamp } => fn fetch_timestamp(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::OrbVallis, OrbVallis } => fn fetch_orb_vallis(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::Varzia, Varzia } => fn fetch_varzia(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::VoidTrader, VoidTrader } => fn fetch_void_trader(chunk: &Bytes)-> WorldStateSchema;
+        { WorldStateSchema::VoidTraders, Vec<VoidTraders> } => fn fetch_void_traders(chunk: &Bytes)-> WorldStateSchema;
+        { ProfileSchema::Profile,  Profile} => fn fetch_profile(chunk: &Bytes)-> ProfileSchema;
+        { ProfileSchema::Stats, Stats} => fn fetch_stats(chunk: &Bytes)-> ProfileSchema;
     );
-
-    decl_fetch_worldstate_func!(fetch_archon_hunt, WorldStateSchema::ArchonHunt, ArchonHunt);
-
-    decl_fetch_worldstate_func!(
-        fetch_cambion_drift,
-        WorldStateSchema::CambionDrift,
-        CambionDrift
-    );
-
-    decl_fetch_worldstate_func!(fetch_cetus_state, WorldStateSchema::CetusState, CetusStatus);
-
-    decl_fetch_worldstate_func!(
-        fetch_conclave_challenges,
-        WorldStateSchema::ConclaveChallenge,
-        Vec<ConclaveChallenge>
-    );
-
-    decl_fetch_worldstate_func!(
-        fetch_construction_porgress,
-        WorldStateSchema::ConstructionProgress,
-        ConstructionProgress
-    );
-
-    decl_fetch_worldstate_func!(
-        fetch_daily_deals,
-        WorldStateSchema::DailyDeal,
-        Vec<DailyDeal>
-    );
-
-    decl_fetch_worldstate_func!(
-        fetch_deep_archimedea,
-        WorldStateSchema::DeepArchimedea,
-        DeepArchimedea
-    );
-
-    decl_fetch_worldstate_func!(
-        fetch_earth_rotation,
-        WorldStateSchema::EarthRotation,
-        EarthRotation
-    );
-
-    decl_fetch_worldstate_func!(fetch_events, WorldStateSchema::Events, Events);
-
-    decl_fetch_worldstate_func!(fetch_fissures, WorldStateSchema::Fissures, Vec<Fissures>);
-
-    decl_fetch_worldstate_func!(
-        fetch_flash_sales,
-        WorldStateSchema::FlashSales,
-        Vec<FlashSales>
-    );
-
-    decl_fetch_worldstate_func!(
-        fetch_global_upgrades,
-        WorldStateSchema::GlobalUpgrades,
-        Vec<GlobalUpgrades>
-    );
-
-    decl_fetch_worldstate_func!(fetch_invasions, WorldStateSchema::Invasion, Vec<Invasion>);
-
-    decl_fetch_worldstate_func!(fetch_kuva, WorldStateSchema::Kuva, Vec<Kuva>);
-
-    decl_fetch_worldstate_func!(
-        fetch_news_items,
-        WorldStateSchema::NewsItems,
-        Vec<NewsItems>
-    );
-
-    decl_fetch_worldstate_func!(fetch_nightwave, WorldStateSchema::Nightwave, Nightwave);
-
-    decl_fetch_worldstate_func!(
-        fetch_persistent_enemy,
-        WorldStateSchema::PersistentEnemy,
-        Vec<PersistentEnemy>
-    );
-
-    decl_fetch_worldstate_func!(fetch_riven, WorldStateSchema::Riven, Riven);
-
-    decl_fetch_worldstate_func!(
-        fetch_sentient_outpost,
-        WorldStateSchema::SentientOutpost,
-        SentientOutpost
-    );
-
-    decl_fetch_worldstate_func!(
-        fetch_sanctuary_status,
-        WorldStateSchema::SanctuaryStatus,
-        SanctuaryStatus
-    );
-    decl_fetch_worldstate_func!(fetch_sortie, WorldStateSchema::Sortie, Sortie);
-
-    decl_fetch_worldstate_func!(fetch_steel_path, WorldStateSchema::SteelPath, SteelPath);
-
-    decl_fetch_worldstate_func!(
-        fetch_syndicate_mission_nodes,
-        WorldStateSchema::SyndicateMissionNodes,
-        SyndicateMissionNodes
-    );
-
-    decl_fetch_worldstate_func!(fetch_timestamp, WorldStateSchema::Timestamp, Timestamp);
-
-    decl_fetch_worldstate_func!(fetch_orb_vallis, WorldStateSchema::OrbVallis, OrbVallis);
-
-    decl_fetch_worldstate_func!(fetch_varzia, WorldStateSchema::Varzia, Varzia);
-
-    decl_fetch_worldstate_func!(fetch_void_trader, WorldStateSchema::VoidTrader, VoidTrader);
-
-    decl_fetch_worldstate_func!(
-        fetch_void_traders,
-        WorldStateSchema::VoidTraders,
-        Vec<VoidTraders>
-    );
-    /************************************************************************************/
-
-    /********************************** ProfileKind **********************************/
-    decl_fetch_profile_func!(fetch_profile_schema, ProfileSchema::Profile, Profile);
-
-    decl_fetch_profile_func!(fetch_stats_schema, ProfileSchema::Profile, Profile);
-    /*********************************************************************************/
 }
 
 pub mod request;
